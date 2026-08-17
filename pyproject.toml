@@ -1,0 +1,13 @@
+[project]
+name = "agent-smith"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic",
+    "fire",
+    "mcp[cli]",
+    "docker",
+    "openai",
+    "pytest",
+    "python-dotenv"
+]
