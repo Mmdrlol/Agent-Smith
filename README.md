@@ -62,3 +62,52 @@ the system prompt, and even though it still does manage to recalibrate itself
 at the end, it end up being way less efficient than qwen3.6-27b which was way
 more direct and simplistic. gpt-oss-120b is still really good for mbpp tasks
 so I kept it for this benchmark.
+
+
+## Notes
+At the time I am pushing this project, there are some bugs crashing the
+moulinette and the eval script, stopping me from doing the reviews.
+However, I managed to solve all the issues so here is how to fix them:
+First, the moulinette doesn't manage to install its packages because of the
+version of python, being now at 3.14. In order to solve it, simply use another
+python version as follows:
+```bash
+uv python install 3.13
+uv sync --python 3.13
+```
+then, for it to run properly, start podman (used for docker) with:
+```bash
+systemctl --user start podman.socket
+```
+
+Now, the evaluation code for the validate command for mbpp will crash because
+the docker image used to launch it will be missing. So install it with:
+```bash
+docker pull python:3.11-slim
+```
+or whatever other version the evaluation code may be using.
+
+
+And finally, for the validate command for swebench, the evaluation code will
+also break and it seems to also be due to podman. However, the only way I found
+to solve this issue is to delete the import of the function
+`copy_to_container` inside:
+```
+moulinette/swebench/interact.py
+```
+with this function below:
+```python
+def copy_to_container(container, source, destination):
+    result = subprocess.run(
+        [
+            "docker",
+            "cp",
+            str(source),
+            f"{container.id}:{destination}",
+        ],
+        capture_output=True,
+        text=True,
+    )
+```
+And normally if I'm not forgetting anything, this should be all the fixes
+needed to make everything work for the review.
