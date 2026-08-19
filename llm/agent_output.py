@@ -23,9 +23,9 @@ class SolutionOutput(BaseModel):
     """Output from student solution - this is what students must
     produce."""
     task_id: str
-    benchmark: str  # "mbpp" or "swebench"
+    benchmark: str
     success: bool
-    solution: str  # Code for MBPP, patch for SWE-bench
+    solution: str
     system_prompt: str
     iterations: int
     total_requests: int

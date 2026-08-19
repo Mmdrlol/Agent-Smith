@@ -9,30 +9,41 @@ import resource
 import socket
 
 
-def is_path_allowed(file_path, sandbox_config):
-    real_path = Path(file_path).resolve(strict=False)
+def resolve_sandbox_path(file_path, workspace):
+    path = Path(file_path)
 
-    for allowed in sandbox_config.allowed_directories:
-        allowed_path = Path(allowed).resolve(strict=False)
-        if real_path.is_relative_to(allowed_path):
-            return True
-    return False
-
-
-def get_restricted_open(sandbox_config):
-    def restricted_open(file_path, *args, **kwargs):
-        if not is_path_allowed(file_path, sandbox_config):
+    if path.is_absolute():
+        if path == Path("/testbed"):
+            relative = Path(".")
+        elif path.is_relative_to("/testbed"):
+            relative = path.relative_to("/testbed")
+        else:
             raise SandboxError(f"path '{file_path}' is not available.")
-        return open(file_path, *args, **kwargs)
+    else:
+        relative = path
+
+    real_path = (Path(workspace).resolve() / relative).resolve(strict=False)
+    workspace_path = Path(workspace).resolve()
+
+    if not real_path.is_relative_to(workspace_path):
+        raise SandboxError(f"path '{file_path}' is not available.")
+
+    return real_path
+
+
+def get_restricted_open(sandbox_config, workspace):
+    def restricted_open(file_path, *args, **kwargs):
+        real_path = resolve_sandbox_path(file_path, workspace)
+        return open(real_path, *args, **kwargs)
     return restricted_open
 
 
-def get_builtins(sandbox_config):
+def get_builtins(sandbox_config, workspace):
     return {
             "print": print,
             "len": len,
             "range": range,
-            "open": get_restricted_open(sandbox_config),
+            "open": get_restricted_open(sandbox_config, workspace),
             "bytearray": bytearray,
             "enumerate": enumerate,
             "min": min,
@@ -166,11 +177,11 @@ def make_mcp_wrapper(connection, func_name, parameters):
     return mcp_wrapper
 
 
-def create_namespace(sandbox_config, mcp_functions):
+def create_namespace(sandbox_config, mcp_functions, workspace):
     namespace = {
             "__builtins__": {}
             }
-    namespace["__builtins__"].update(get_builtins(sandbox_config))
+    namespace["__builtins__"].update(get_builtins(sandbox_config, workspace))
     namespace["__builtins__"]["__import__"] = \
         get_restricted_imports(sandbox_config)
     namespace["final_answer"] = final_answer
@@ -230,8 +241,8 @@ def sandbox(code, namespace):
             "output": output_buffer.getvalue()}
 
 
-def sandbox_worker(sandbox_config, result_queue, mcp_connection,
-                   sandbox_connection, tool_infos):
+def sandbox_worker(sandbox_config, result_connection, mcp_connection,
+                   sandbox_connection, tool_infos, workspace):
     max_memory = sandbox_config.max_memory_mb * 1024 * 1024
     resource.setrlimit(resource.RLIMIT_AS,
                        (max_memory, max_memory))
@@ -242,7 +253,7 @@ def sandbox_worker(sandbox_config, result_queue, mcp_connection,
         mcp_functions[tool["name"]] = make_mcp_wrapper(
                 mcp_connection, tool["name"], tool["parameters"])
 
-    namespace = create_namespace(sandbox_config, mcp_functions)
+    namespace = create_namespace(sandbox_config, mcp_functions, workspace)
 
     while True:
         code = sandbox_connection.recv()
@@ -250,19 +261,19 @@ def sandbox_worker(sandbox_config, result_queue, mcp_connection,
             break
         elif code["type"] == "execute":
             result = sandbox(code["code"], namespace)
-            result_queue.put(result)
+            result_connection.send(result)
 
 
-def create_sandbox(sandbox_config, mcp_connection, tool_infos):
-    result_queue = multiprocessing.Queue()
+def create_sandbox(sandbox_config, mcp_connection, tool_infos, workspace):
+    result_parent, result_child = multiprocessing.Pipe(duplex=False)
 
     sandbox_connection = multiprocessing.Pipe()
     process = multiprocessing.Process(
             target=sandbox_worker,
-            args=(sandbox_config, result_queue,
-                  mcp_connection, sandbox_connection[0], tool_infos)
+            args=(sandbox_config, result_child, mcp_connection,
+                  sandbox_connection[0], tool_infos, workspace)
             )
 
     process.start()
 
-    return process, result_queue, sandbox_connection[1]
+    return process, result_parent, sandbox_connection[1]

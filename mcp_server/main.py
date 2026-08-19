@@ -1,11 +1,11 @@
-from mcp.server import MCPServer
+from mcp.server.fastmcp import FastMCP
 from functools import wraps
 from pathlib import Path
 import re
 import ast
 import subprocess
 
-mcp = MCPServer("mcp-server")
+mcp = FastMCP("mcp-server")
 
 
 def catch_error(func):

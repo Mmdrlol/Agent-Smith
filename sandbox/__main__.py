@@ -9,7 +9,6 @@ from llm.__main__ import agent_llm, send_llm
 from mcp_tools_swebench import clean_run_test_output
 from pathlib import Path
 from mcp.client.streamable_http import streamable_http_client
-from queue import Empty
 import fire
 import subprocess
 import shlex
@@ -31,7 +30,7 @@ async def handle_tool_call(session, mcp_connection, message):
         text = "\n".join(texts)
 
         mcp_connection.send({
-            "is_error": result.is_error,
+            "is_error": result.isError,
             "text": text})
     except Exception as e:
         mcp_connection.send({
@@ -77,7 +76,7 @@ async def run_session(sandbox_config, session, connection,
         tool_infos.append({
             "name": tool.name,
             "parameters": list(
-                tool.input_schema.get("properties", {}).keys())})
+                tool.inputSchema.get("properties", {}).keys())})
 
     if llm:
         manual = generate_manual(tools)
@@ -85,8 +84,10 @@ async def run_session(sandbox_config, session, connection,
                 manual, provider_url, model_name, solution_output,
                 additional_system_prompt)
 
-    process, result_queue, sandbox_connection = create_sandbox(
-            sandbox_config, child_connection, tool_infos)
+    if not workspace:
+        workspace = (Path.cwd() / "testbed").resolve()
+    process, result_connection, sandbox_connection = create_sandbox(
+            sandbox_config, child_connection, tool_infos, workspace)
 
     if llm:
         llm_messages.append({"role": "user",
@@ -109,7 +110,7 @@ async def run_session(sandbox_config, session, connection,
                     llm_client, llm_messages, solution_output)
             code = add_print_to_tools(code, tools)
         else:
-            code = test_cli()
+            code = test_cli(sandbox_connection)
 
         sandbox_connection.send({"type": "execute",
                                  "code": code})
@@ -133,9 +134,9 @@ async def run_session(sandbox_config, session, connection,
                 await handle_tool_call(session, parent_connection, message)
                 mcp_time += loop.time() - mcp_start
 
-            try:
-                result = result_queue.get_nowait()
-            except Empty:
+            if result_connection.poll():
+                result = result_connection.recv()
+            else:
                 result = None
 
             if result is not None:
@@ -273,27 +274,18 @@ async def run_session(sandbox_config, session, connection,
     process.join()
 
 
-def test_cli():
-    print("\033[m", end="")
-    lines = []
-    while True:
-        try:
-            line = input("\033[35m>>>\033[m ")
-        except EOFError:
-            print()
-            raise SystemExit
+def test_cli(sandbox_connection):
+    try:
+        line = input("\033[35m>>>\033[m ")
+    except EOFError:
+        sandbox_connection.send({"type": "shutdown"})
+        raise SystemExit
 
-        if len(lines) == 0 and line.strip() == "exit":
-            raise SystemExit
+    if line.strip() == "exit":
+        sandbox_connection.send({"type": "shutdown"})
+        raise SystemExit
 
-        if line.strip() == "":
-            if lines:
-                break
-            continue
-        lines.append(line)
-
-    print("\033[36m", end="")
-    return "\n".join(lines) + "\n"
+    return line
 
 
 def build_docker(mcp_stdio, workspace=None):
@@ -306,6 +298,7 @@ def build_docker(mcp_stdio, workspace=None):
                     "."],
                    check=True)
     if not workspace:
+        Path("testbed").mkdir(parents=True, exist_ok=True)
         workspace = Path("testbed").resolve()
     mcp_command = shlex.split(mcp_stdio)
     project_root = Path(".").resolve()
@@ -327,7 +320,7 @@ async def stdio_server(sandbox_config, mcp_stdio,
                        solution_output=None,
                        llm=False, mbpp=False, swe=False,
                        container_id=None):
-    if not swe:
+    if mbpp:
         server_params = build_docker(mcp_stdio, workspace=workspace)
     else:
         parts = shlex.split(mcp_stdio)
@@ -355,23 +348,25 @@ async def http_server(sandbox_config, mcp_url):
             await run_session(sandbox_config, session, connection)
 
 
-def run(config=None, mcp_stdio=None, mcp_server=None):
+def run(config=None, mcp_stdio="python mcp_server/main.py", mcp_server=None):
     if config:
         sandbox_config = SandboxConfig.model_validate_json(
                 Path(config).read_text())
     else:
         sandbox_config = SandboxConfig()
 
-    if mcp_stdio and mcp_server:
-        raise ValueError("Only one server should be specified.")
-    if mcp_stdio:
-        asyncio.run(stdio_server(sandbox_config, mcp_stdio))
-    elif mcp_server:
+    if mcp_server:
         asyncio.run(http_server(sandbox_config, mcp_server))
+    elif mcp_stdio:
+        asyncio.run(stdio_server(sandbox_config, mcp_stdio))
     else:
         raise ValueError("You must specify a MCP server with either "
                          "--mcp_stdio or --mcp_server")
 
 
-if __name__ == "__main__":
+def main():
     fire.Fire(run)
+
+
+if __name__ == "__main__":
+    main()

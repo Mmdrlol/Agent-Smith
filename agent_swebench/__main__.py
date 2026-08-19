@@ -10,10 +10,6 @@ import subprocess
 
 
 class SWEBenchTaskInput(BaseModel):
-    """Input for a SWE-bench task, provided by the moulinette.
-    Your agent receives this and must produce a git patch that fixes the
-    issue.
-    """
     instance_id: str
     problem_statement: str
     docker_image: str
@@ -44,7 +40,7 @@ def start_swe_container(image):
 
 def install_mcp_server(container_id):
     subprocess.run(["docker", "exec", container_id, "python",
-                    "-m", "pip", "install", "mcp"],
+                    "-m", "pip", "install", "mcp[cli]>=1,<2"],
                    check=True)
 
     subprocess.run(
@@ -84,13 +80,14 @@ def get_repo_file_list(container_id):
     return result.stdout
 
 
-def agent_swe(task_file, output, model_name, provider_url):
+def agent_swe(task_file, output, model_name="qwen/qwen3.6-27b",
+              provider_url="https://api.groq.com/openai/v1"):
     sandbox_config = SandboxConfig()
     swe_task = SWEBenchTaskInput.model_validate_json(
             Path(task_file).read_text())
     solution_output = SolutionOutput(
             task_id=swe_task.instance_id,
-            benchmark="swebench",
+            benchmark="swe-bench",
             success=False,
             solution="",
             iterations=0,

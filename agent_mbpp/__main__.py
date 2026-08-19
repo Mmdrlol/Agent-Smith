@@ -63,7 +63,8 @@ def create_mbpp_workspace(mbpp_task):
     return workspace
 
 
-def agent_mbpp(task_file, output, model_name, provider_url):
+def agent_mbpp(task_file, output, model_name="openai/gpt-oss-120b",
+               provider_url="https://api.groq.com/openai/v1"):
     sandbox_config = SandboxConfig()
     mbpp_task = MBPPTaskInput.model_validate_json(Path(task_file).read_text())
     workspace = create_mbpp_workspace(mbpp_task)

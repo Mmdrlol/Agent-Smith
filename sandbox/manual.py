@@ -17,12 +17,12 @@ def generate_manual(tools):
                 f'{tool.name}({
                     ", ".join(
                         f"{key}: {value.get("type", "unknown")}"
-                        for key, value in tool.input_schema[
+                        for key, value in tool.inputSchema[
                             "properties"].items()
                     )
                 })\n    {tool.description}\n    Returns: {
-                    tool.output_schema["properties"]["result"].get("type",
-                                                                   "unknown")
+                    tool.outputSchema["properties"]["result"].get("type",
+                                                                  "unknown")
                 }\n'
                 for tool in tools.tools
             )

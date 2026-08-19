@@ -56,5 +56,6 @@ class LLMClient:
                 print(f"{type(e).__name__}: {e}")
                 retries += 1
                 self.key_index = (self.key_index + 1) % len(self.api_keys)
+                time.sleep(1)
 
         raise RuntimeError("All API keys failed.")

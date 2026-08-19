@@ -6,6 +6,6 @@ RUN apt-get update && \
 
 WORKDIR /app
 
-RUN pip install "mcp[cli]" pydantic pytest
+RUN pip install "mcp[cli]>=1,<2" pydantic pytest
 
 WORKDIR /testbed
